@@ -1,0 +1,27 @@
+#!/bin/bash
+
+set -e
+
+echo "🧪 Running Wasm-Wallet tests..."
+
+# Run Rust tests
+cargo test
+
+# Run WASM tests in browser
+wasm-pack test --headless --firefox
+
+echo "✅ All tests passed!"
+
+# ===== 빌드 명령어들 =====
+# 개발환경 빌드
+wasm-pack build --target web --dev
+
+# 프로덕션 빌드
+wasm-pack build --target web --release
+
+# 테스트 실행
+cargo test
+wasm-pack test --headless --firefox
+
+# 패키지 사이즈 확인
+ls -lh pkg/

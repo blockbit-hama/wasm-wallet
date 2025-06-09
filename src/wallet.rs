@@ -8,15 +8,16 @@
 use crate::crypto::CryptoUtils;
 use crate::ethereum::EthereumUtils;
 use crate::types::*;
-use crate::utils::*;
 use bip39::{Language, Mnemonic};
 use rand_core::OsRng;
-use secp256k1::{Secp256k1, SecretKey};
+use k256::{SecretKey};
 use wasm_bindgen::prelude::*;
+
+// console_log 매크로 import
+use crate::console_log;
 
 #[wasm_bindgen]
 pub struct WalletCore {
-  secp: Secp256k1<secp256k1::All>,
   crypto: CryptoUtils,
   ethereum: EthereumUtils,
 }
@@ -27,7 +28,6 @@ impl WalletCore {
   pub fn new() -> WalletCore {
     console_log!("🦀 Initializing WalletCore...");
     WalletCore {
-      secp: Secp256k1::new(),
       crypto: CryptoUtils::new(),
       ethereum: EthereumUtils::new(),
     }
@@ -68,23 +68,23 @@ impl WalletCore {
     let secret_key = SecretKey::from_slice(master_key)
       .map_err(|e| JsValue::from_str(&format!("Failed to create secret key: {}", e)))?;
     
-    let public_key = secret_key.public_key(&self.secp);
+    let public_key = secret_key.public_key();
     let address = self.ethereum.private_key_to_address(master_key)?;
     
     console_log!("✅ Created wallet from mnemonic: {}", address);
     
     Ok(WalletInfo::new(
       address,
-      hex::encode(public_key.serialize()),
+      hex::encode(public_key.to_sec1_bytes()),
     ))
   }
   
   /// 랜덤 개인키 생성
   #[wasm_bindgen]
   pub fn generate_private_key(&self) -> Vec<u8> {
-    let secret_key = SecretKey::new(&mut OsRng);
+    let secret_key = SecretKey::random(&mut OsRng);
     console_log!("✅ Generated random private key");
-    secret_key.secret_bytes().to_vec()
+    secret_key.to_bytes().to_vec()
   }
   
   /// 개인키에서 주소 생성

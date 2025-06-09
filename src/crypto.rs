@@ -5,7 +5,6 @@
 * description: 
 **/
 
-use crate::utils::*;
 use tiny_keccak::{Hasher, Keccak};
 use wasm_bindgen::prelude::*;
 use zeroize::Zeroize;
@@ -44,7 +43,7 @@ impl CryptoUtils {
   pub fn encrypt_data(&self, data: &str, password: &str) -> Result<Vec<u8>, JsValue> {
     use aes_gcm::{
       aead::{Aead, AeadCore, KeyInit, OsRng},
-      Aes256Gcm, Key, Nonce,
+      Aes256Gcm, Key,
     };
     use argon2::{
       password_hash::{PasswordHasher, SaltString},
@@ -59,8 +58,9 @@ impl CryptoUtils {
       .hash_password(password.as_bytes(), &salt)
       .map_err(|e| JsValue::from_str(&format!("Password hashing failed: {}", e)))?;
     
+    let binding = password_hash.hash.unwrap();
     let key = Key::<Aes256Gcm>::from_slice(
-      &password_hash.hash.unwrap().as_bytes()[..32]
+      &binding.as_bytes()[..32]
     );
     
     // AES-GCM 암호화
@@ -110,8 +110,9 @@ impl CryptoUtils {
       .hash_password(password.as_bytes(), &salt)
       .map_err(|_| JsValue::from_str("Password verification failed"))?;
     
+    let binding = password_hash.hash.unwrap();
     let key = Key::<Aes256Gcm>::from_slice(
-      &password_hash.hash.unwrap().as_bytes()[..32]
+      &binding.as_bytes()[..32]
     );
     
     // 복호화

@@ -35,4 +35,5 @@ pub fn main() {
 pub use crypto::CryptoUtils;
 pub use ethereum::EthereumUtils;
 pub use types::*;
+pub use utils::*;
 pub use wallet::WalletCore;

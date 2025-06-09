@@ -1,6 +1,6 @@
 
 # ===== README.md =====
-# 🦀 Wasm-Wallet
+# 🦀 Wasm-Wallet-Core
 
 High-performance Ethereum wallet library compiled to WebAssembly using Rust.
 
@@ -20,13 +20,13 @@ High-performance Ethereum wallet library compiled to WebAssembly using Rust.
 ### Installation
 
 ```bash
-npm install wasm-wallet
+npm install wasm-wallet-core
 ```
 
 ### Usage
 
 ```javascript
-import init, { WalletCore } from 'wasm-wallet';
+import init, { WalletCore } from 'wasm-wallet-core';
 
 // Initialize WASM module
 await init();

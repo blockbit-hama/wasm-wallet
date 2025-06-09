@@ -5,14 +5,14 @@
 * description: 
 **/
 
-#![cfg(target_arch = "wasm32")]
+#[cfg(target_arch = "wasm32")]
 
 extern crate wasm_bindgen_test;
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-use wasm_wallet::{WalletCore, CryptoUtils, EthereumUtils};
+use wasm_wallet_core::{WalletCore, CryptoUtils, EthereumUtils, current_timestamp};
 
 #[wasm_bindgen_test]
 fn test_wallet_creation() {
@@ -102,4 +102,16 @@ fn test_message_signing() {
     .expect("Failed to sign message");
   
   assert_eq!(signature.len(), 65); // r(32) + s(32) + v(1)
+}
+
+#[wasm_bindgen_test]
+fn test_current_timestamp() {
+  let timestamp1 = current_timestamp();
+  
+  // 타임스탬프가 합리적인 범위에 있는지 확인
+  // 2020년 1월 1일 이후여야 함 (1577836800)
+  assert!(timestamp1 > 1577836800);
+  
+  // 2050년 이전이어야 함 (2524608000)
+  assert!(timestamp1 < 2524608000);
 }

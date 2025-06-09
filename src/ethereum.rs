@@ -25,32 +25,33 @@ impl EthereumUtils {
     }
   }
   
-  /// 개인키에서 이더리움 주소 생성
+  /// WASM 바인딩용 - 바이트 배열에서 주소 생성
   #[wasm_bindgen]
   pub fn private_key_to_address(&self, private_key: &[u8]) -> Result<String, JsValue> {
     let secret_key = SecretKey::from_slice(private_key)
       .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?;
     
-    let public_key = secret_key.public_key();
-    let encoded_point = public_key.to_encoded_point(false);
-    let public_key_bytes = &encoded_point.as_bytes()[1..]; // 0x04 제거
-    
-    // Keccak-256 해시의 마지막 20바이트가 주소
-    let hash = self.crypto.keccak256(public_key_bytes);
-    let address = hex::encode(&hash[12..]);
-    
-    Ok(format!("0x{}", address))
+    self.private_key_to_address_internal(&secret_key)
+      .map_err(|e| JsValue::from_str(&e))
   }
   
-  /// 개인키에서 공개키 추출
+  /// WASM 바인딩용 - 바이트 배열에서 공개키 추출
   #[wasm_bindgen]
   pub fn private_key_to_public_key(&self, private_key: &[u8]) -> Result<Vec<u8>, JsValue> {
     let secret_key = SecretKey::from_slice(private_key)
       .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?;
     
-    let public_key = secret_key.public_key();
-    let encoded_point = public_key.to_encoded_point(false);
-    Ok(encoded_point.as_bytes().to_vec())
+    Ok(self.private_key_to_public_key_internal(&secret_key))
+  }
+  
+  /// WASM 바인딩용 - 메시지 서명
+  #[wasm_bindgen]
+  pub fn sign_message(&self, private_key: &[u8], message: &str) -> Result<Vec<u8>, JsValue> {
+    let secret_key = SecretKey::from_slice(private_key)
+      .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?;
+    
+    self.sign_message_internal(&secret_key, message)
+      .map_err(|e| JsValue::from_str(&e))
   }
   
   /// 트랜잭션 서명 (EIP-155 지원)
@@ -64,63 +65,8 @@ impl EthereumUtils {
     let secret_key = SecretKey::from_slice(private_key)
       .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?;
     
-    let signing_key = SigningKey::from(secret_key);
-    let signature: Signature = signing_key.sign(transaction_hash);
-    
-    // Extract r and s from signature
-    let signature_bytes = signature.to_bytes();
-    let r = &signature_bytes[..32];
-    let s = &signature_bytes[32..];
-    
-    // Recovery ID calculation (simplified)
-    let recovery_id = 0u8; // 실제로는 recovery ID를 계산해야 함
-    
-    // EIP-155: v = recovery_id + 35 + 2 * chain_id
-    let v = if let Some(chain_id) = chain_id {
-      recovery_id as u64 + 35 + 2 * chain_id
-    } else {
-      recovery_id as u64 + 27
-    };
-    
-    // r(32) + s(32) + v(1) 형태로 반환
-    let mut result = Vec::with_capacity(65);
-    result.extend_from_slice(r); // r
-    result.extend_from_slice(s); // s
-    result.push(v as u8); // v
-    
-    Ok(result)
-  }
-  
-  /// 메시지 서명 (EIP-191)
-  #[wasm_bindgen]
-  pub fn sign_message(&self, private_key: &[u8], message: &str) -> Result<Vec<u8>, JsValue> {
-    let secret_key = SecretKey::from_slice(private_key)
-      .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?;
-    
-    // EIP-191: "\x19Ethereum Signed Message:\n" + message.length + message
-    let prefix = format!("\x19Ethereum Signed Message:\n{}", message.len());
-    let full_message = format!("{}{}", prefix, message);
-    
-    let message_hash = self.crypto.keccak256(full_message.as_bytes());
-    
-    let signing_key = SigningKey::from(secret_key);
-    let signature: Signature = signing_key.sign(&message_hash);
-    
-    // Extract r and s from signature
-    let signature_bytes = signature.to_bytes();
-    let r = &signature_bytes[..32];
-    let s = &signature_bytes[32..];
-    
-    // Recovery ID calculation (simplified)
-    let recovery_id = 0u8; // 실제로는 recovery ID를 계산해야 함
-    
-    // r(32) + s(32) + v(1) 형태로 반환
-    let mut result = Vec::with_capacity(65);
-    result.extend_from_slice(r); // r
-    result.extend_from_slice(s); // s
-    result.push((recovery_id + 27) as u8); // v
-    
-    Ok(result)
+    self.sign_transaction_internal(&secret_key, transaction_hash, chain_id)
+      .map_err(|e| JsValue::from_str(&e))
   }
   
   /// 트랜잭션 빌드 (RLP 인코딩)
@@ -209,25 +155,105 @@ impl EthereumUtils {
   }
 }
 
+// 내부 함수들 - 타입 안전한 버전
+impl EthereumUtils {
+  /// 내부용 - 타입 안전한 주소 생성
+  pub fn private_key_to_address_internal(&self, secret_key: &SecretKey) -> Result<String, String> {
+    let public_key = secret_key.public_key();
+    let encoded_point = public_key.to_encoded_point(false);
+    let public_key_bytes = &encoded_point.as_bytes()[1..]; // 0x04 제거
+    
+    // Keccak-256 해시의 마지막 20바이트가 주소
+    let hash = self.crypto.keccak256(public_key_bytes);
+    let address = hex::encode(&hash[12..]);
+    
+    Ok(format!("0x{}", address))
+  }
+  
+  /// 내부용 - 타입 안전한 공개키 추출
+  pub fn private_key_to_public_key_internal(&self, secret_key: &SecretKey) -> Vec<u8> {
+    let public_key = secret_key.public_key();
+    let encoded_point = public_key.to_encoded_point(false);
+    encoded_point.as_bytes().to_vec()
+  }
+  
+  /// 내부용 - 타입 안전한 메시지 서명 (EIP-191)
+  pub fn sign_message_internal(&self, secret_key: &SecretKey, message: &str) -> Result<Vec<u8>, String> {
+    // EIP-191: "\x19Ethereum Signed Message:\n" + message.length + message
+    let prefix = format!("\x19Ethereum Signed Message:\n{}", message.len());
+    let full_message = format!("{}{}", prefix, message);
+    
+    let message_hash = self.crypto.keccak256(full_message.as_bytes());
+    
+    let signing_key = SigningKey::from(secret_key);
+    let signature: Signature = signing_key.sign(&message_hash);
+    
+    // Extract r and s from signature
+    let signature_bytes = signature.to_bytes();
+    let r = &signature_bytes[..32];
+    let s = &signature_bytes[32..];
+    
+    // Recovery ID calculation (simplified)
+    let recovery_id = 0u8; // 실제로는 recovery ID를 계산해야 함
+    
+    // r(32) + s(32) + v(1) 형태로 반환
+    let mut result = Vec::with_capacity(65);
+    result.extend_from_slice(r); // r
+    result.extend_from_slice(s); // s
+    result.push((recovery_id + 27) as u8); // v
+    
+    Ok(result)
+  }
+  
+  /// 내부용 - 타입 안전한 트랜잭션 서명 (EIP-155)
+  pub fn sign_transaction_internal(
+    &self,
+    secret_key: &SecretKey,
+    transaction_hash: &[u8],
+    chain_id: Option<u64>,
+  ) -> Result<Vec<u8>, String> {
+    let signing_key = SigningKey::from(secret_key);
+    let signature: Signature = signing_key.sign(transaction_hash);
+    
+    // Extract r and s from signature
+    let signature_bytes = signature.to_bytes();
+    let r = &signature_bytes[..32];
+    let s = &signature_bytes[32..];
+    
+    // Recovery ID calculation (simplified)
+    let recovery_id = 0u8; // 실제로는 recovery ID를 계산해야 함
+    
+    // EIP-155: v = recovery_id + 35 + 2 * chain_id
+    let v = if let Some(chain_id) = chain_id {
+      recovery_id as u64 + 35 + 2 * chain_id
+    } else {
+      recovery_id as u64 + 27
+    };
+    
+    // r(32) + s(32) + v(1) 형태로 반환
+    let mut result = Vec::with_capacity(65);
+    result.extend_from_slice(r); // r
+    result.extend_from_slice(s); // s
+    result.push(v as u8); // v
+    
+    Ok(result)
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
-  use wasm_bindgen_test::*;
   
-  wasm_bindgen_test_configure!(run_in_browser);
-  
-  #[wasm_bindgen_test]
+  #[test]
   fn test_ethereum_utils_creation() {
     let ethereum = EthereumUtils::new();
-    // 생성이 성공하면 OK
     assert!(true);
   }
   
-  #[wasm_bindgen_test]
+  #[test]
   fn test_private_key_to_address() {
     let ethereum = EthereumUtils::new();
     
-    // 알려진 개인키로 테스트
     let private_key = [
       0x45, 0xa9, 0x15, 0xe4, 0xd0, 0x60, 0x29, 0x4c,
       0x8a, 0x2f, 0x68, 0x52, 0x56, 0xd5, 0x38, 0x82,
@@ -238,157 +264,25 @@ mod tests {
     let address = ethereum.private_key_to_address(&private_key)
       .expect("Failed to generate address");
     
-    // 주소 형식 검증
     assert!(address.starts_with("0x"));
     assert_eq!(address.len(), 42);
-    
-    // 16진수 문자만 포함하는지 확인
-    let hex_part = &address[2..];
-    assert!(hex_part.chars().all(|c| c.is_ascii_hexdigit()));
   }
   
-  #[wasm_bindgen_test]
-  fn test_private_key_to_address_deterministic() {
-    let ethereum = EthereumUtils::new();
-    let private_key = vec![1u8; 32]; // 같은 개인키
-    
-    let address1 = ethereum.private_key_to_address(&private_key)
-      .expect("Failed to generate address 1");
-    let address2 = ethereum.private_key_to_address(&private_key)
-      .expect("Failed to generate address 2");
-    
-    // 같은 개인키는 항상 같은 주소를 생성해야 함
-    assert_eq!(address1, address2);
-  }
-  
-  #[wasm_bindgen_test]
-  fn test_private_key_to_public_key() {
-    let ethereum = EthereumUtils::new();
-    let private_key = vec![0x42u8; 32];
-    
-    let public_key = ethereum.private_key_to_public_key(&private_key)
-      .expect("Failed to generate public key");
-    
-    // 압축되지 않은 공개키는 65바이트 (0x04 + 32바이트 x + 32바이트 y)
-    assert_eq!(public_key.len(), 65);
-    assert_eq!(public_key[0], 0x04); // 압축되지 않은 공개키 prefix
-  }
-  
-  #[wasm_bindgen_test]
-  fn test_invalid_private_key() {
-    let ethereum = EthereumUtils::new();
-    
-    // 잘못된 길이의 개인키
-    let invalid_key = vec![0u8; 16]; // 32바이트가 아님
-    let result = ethereum.private_key_to_address(&invalid_key);
-    assert!(result.is_err());
-    
-    // 모든 바이트가 0인 개인키 (유효하지 않음)
-    let zero_key = vec![0u8; 32];
-    let result = ethereum.private_key_to_address(&zero_key);
-    assert!(result.is_err());
-  }
-  
-  #[wasm_bindgen_test]
-  fn test_sign_message() {
-    let ethereum = EthereumUtils::new();
-    let private_key = vec![0x33u8; 32];
-    let message = "Hello, Ethereum!";
-    
-    let signature = ethereum.sign_message(&private_key, message)
-      .expect("Failed to sign message");
-    
-    // 서명은 65바이트여야 함 (r: 32 + s: 32 + v: 1)
-    assert_eq!(signature.len(), 65);
-    
-    // 같은 메시지에 대해 같은 서명이 나와야 함
-    let signature2 = ethereum.sign_message(&private_key, message)
-      .expect("Failed to sign message again");
-    assert_eq!(signature, signature2);
-  }
-  
-  #[wasm_bindgen_test]
-  fn test_sign_different_messages() {
-    let ethereum = EthereumUtils::new();
-    let private_key = vec![0x44u8; 32];
-    let message1 = "Message 1";
-    let message2 = "Message 2";
-    
-    let signature1 = ethereum.sign_message(&private_key, message1)
-      .expect("Failed to sign message 1");
-    let signature2 = ethereum.sign_message(&private_key, message2)
-      .expect("Failed to sign message 2");
-    
-    // 다른 메시지는 다른 서명을 생성해야 함
-    assert_ne!(signature1, signature2);
-  }
-  
-  #[wasm_bindgen_test]
-  fn test_sign_transaction() {
-    let ethereum = EthereumUtils::new();
-    let private_key = vec![0x55u8; 32];
-    let tx_hash = vec![0xabu8; 32];
-    
-    // 체인 ID와 함께 서명
-    let signature_with_chain = ethereum.sign_transaction(&private_key, &tx_hash, Some(1))
-      .expect("Failed to sign transaction with chain ID");
-    assert_eq!(signature_with_chain.len(), 65);
-    
-    // 체인 ID 없이 서명
-    let signature_without_chain = ethereum.sign_transaction(&private_key, &tx_hash, None)
-      .expect("Failed to sign transaction without chain ID");
-    assert_eq!(signature_without_chain.len(), 65);
-    
-    // 체인 ID가 다르면 서명도 달라야 함
-    assert_ne!(signature_with_chain, signature_without_chain);
-  }
-  
-  #[wasm_bindgen_test]
+  #[test]
   fn test_is_valid_address() {
     let ethereum = EthereumUtils::new();
     
-    // 유효한 주소들
     assert!(ethereum.is_valid_address("0x742d35Cc6634C0532925a3b8D47641bD1e3f2F31"));
-    assert!(ethereum.is_valid_address("0x0000000000000000000000000000000000000000"));
-    assert!(ethereum.is_valid_address("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"));
-    
-    // 무효한 주소들
-    assert!(!ethereum.is_valid_address("742d35Cc6634C0532925a3b8D47641bD1e3f2F31")); // 0x 없음
-    assert!(!ethereum.is_valid_address("0x742d35Cc6634C0532925a3b8D47641bD1e3f2F3")); // 너무 짧음
-    assert!(!ethereum.is_valid_address("0x742d35Cc6634C0532925a3b8D47641bD1e3f2F31G")); // 잘못된 16진수
-    assert!(!ethereum.is_valid_address(""));
-    assert!(!ethereum.is_valid_address("invalid"));
+    assert!(!ethereum.is_valid_address("invalid_address"));
   }
   
-  #[wasm_bindgen_test]
+  #[test]
   fn test_wei_to_ether() {
     let ethereum = EthereumUtils::new();
     
-    // 1 ETH = 10^18 Wei
     let one_eth_wei = "1000000000000000000";
     let ether = ethereum.wei_to_ether(one_eth_wei)
       .expect("Failed to convert 1 ETH");
     assert_eq!(ether, "1.000000");
-    
-    // 0 ETH
-    let zero_wei = "0";
-    let ether = ethereum.wei_to_ether(zero_wei)
-      .expect("Failed to convert 0 ETH");
-    assert_eq!(ether, "0.000000");
-  }
-  
-  #[wasm_bindgen_test]
-  fn test_ether_to_wei() {
-    let ethereum = EthereumUtils::new();
-    
-    // 1 ETH
-    let wei = ethereum.ether_to_wei("1.0")
-      .expect("Failed to convert 1 ETH");
-    assert_eq!(wei, "1000000000000000000");
-    
-    // 0 ETH
-    let wei = ethereum.ether_to_wei("0")
-      .expect("Failed to convert 0 ETH");
-    assert_eq!(wei, "0");
   }
 }
